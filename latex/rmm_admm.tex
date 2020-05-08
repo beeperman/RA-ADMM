@@ -1,0 +1,211 @@
+%%% PREAMBLE
+\documentclass[11pt]{article}
+
+% geometry and figures
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx,float,subcaption}
+\usepackage{tikz}
+\usetikzlibrary{cd}
+\graphicspath{ {figures/} }
+
+\usepackage{lmodern}	% removes font warnings
+\usepackage{animate}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{bbm}
+\usepackage{comment}
+\usepackage{tikz}
+\usetikzlibrary{cd}
+
+% math symbols and environments
+\usepackage{mathtools,amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\DeclareMathOperator{\relu}{ReLU}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\rnk}{rank}
+
+\usepackage[linesnumbered,ruled]{algorithm2e}
+
+% hyperlinks
+\usepackage{hyperref}
+\hypersetup{
+colorlinks=true,
+linkcolor=black,
+citecolor=black,
+filecolor=black
+}
+\usepackage{caption}
+
+%%% TITLE INFORMATION
+\title{Robust Accelerated ADMM}
+\author{Fangda Gu, Jingqi Li, Ziye Ma\footnote{Equal contribution, sorted in alphabetical order}} 
+\date{May 2020}
+
+%%% BEGIN DOCUMENT
+\begin{document}
+
+%%% TITLE
+\maketitle
+
+%%% ABSTRACT
+\begin{abstract}
+	Accelerated ADMM is a fast ADMM algorithm based on Nestrov accelerated gradient descent\cite{goldstein2014fast}. However, if part of the problem is noisy, then the algorithm can diverge easily, as shown in experiments in later sections. In order to address this problem, we propose an algorithm that has a single scalar parameter that can be tuned to trade off robustness to noise versus convergence gaurantees.
+\end{abstract}
+
+%%% INTRODUCTION
+\section{Introduction}
+\label{sec: introduction}
+
+ADMM is called the \textit{Alternating Direction Method of Multipliers} because it alternates between solving for the primal problem (in its constraint-penalized augmented Lagrangian form) and the dual problem. The accelerated ADMM algorithm takes advantage of the fact that ADMM uses gradient ascent to solve for the dual problem by using Nestrov-accelerated gradient steps (also called the momentum method in some literature). However, accelerated gradient methods aren't as robust to noise (normally in the gradient) as vanilla gradient methods are. Therefore, it is conceivable that the accelerated ADMM also suffers from this problem, as corroborated by our own experiments. Towards this end, we propose a method that is similar to that of \cite{cyrus2018robust}, enabling us to make the accelerated ADMM algorithm more robust to noise.
+
+\subsection{Notations}
+We denote $l_2$ norm as $\| \cdot \|$ and $l_1$ norm as $| \cdot |$. For any convex function $f$, $f^*$ denotes its Fenchel conjugate, defined as $f^*(y) = \sup_x \langle x, y \rangle - f(x)$. We denote $q^P(\cdot)$ as the dual to the primal problem $P$ (usually a mathematical programming, hence the use of capital P) and $	q_{\text{aug}}^P(\cdot)$ as the augmented dual to the same primal problem. $L^P$ and $L_{\text{aug}}^P$ are lagrangians defined in a similar fashion. In this paper, $\Lambda$ is used to denote eigenvalues as opposed to $\lambda$ in order to avoid confusion with lagrange multipliers. Furthermore, $\Lambda_{\text{min}}(\cdot)$ and $\Lambda_{\text{max}}(\cdot)$ denote the minimum and maximum eigenvalues of a symmetric matrix respectively. As per standard notation, $\mathcal{D}(f)$ is the domain of function $f$.
+
+%%% PROBLEM STATEMENT
+\section{Problem Statement}
+\label{sec: problem_statement}
+First consider problem with this form
+\begin{equation}
+    \begin{aligned}
+    \min H(u) + G(v) \\
+    \text{s.t.} \ Au + Bv = b
+    \end{aligned}
+    \label{eqn: obj}
+\end{equation}
+where $u \in \mathbb{R}^{n_u}$, $v \in \mathbb{R}^{n_v}$, and both $H, G$ are closed convex functions. $b \in \mathbb{R}^{n_b}$ and $A,B$ are affine transformations of appropriate size.\\
+ADMM is an algorithm tailored specifically to problems of form (\ref{eqn: obj}), and we present both ADMM and accelerated ADMM below:
+
+\begin{algorithm}
+    \SetKwInOut{Input}{Input}
+    \SetKwInOut{Output}{Output}
+
+    \Input{$v_0 \in \mathbb{R}^{n_v}$,$\lambda_0 \in \mathbb{R}^{n_b}$, $\rho > 0$}
+    \For{$k = 0,1,2,...$}{
+    	$u_{k+1} = \text{argmin}_u H(u)+\langle \lambda_k, -Au \rangle +  \frac{\rho}{2} \|b-Au-Bv_k\|^2$ \\
+    	$v_{k+1} = \text{argmin}_u G(v)+\langle \lambda_k, -Bv \rangle +  \frac{\rho}{2} \|b-Au_{k+1}-Bv\|^2$ \\
+    	$\lambda_{k+1} = \lambda_k + \rho(b-Au_{k+1}-Bv_{k+1})$
+    	}
+    \caption{ADMM}
+\end{algorithm}
+
+\begin{algorithm}
+    \SetKwInOut{Input}{Input}
+    \SetKwInOut{Output}{Output}
+
+    \Input{$v_{-1} = \hat v_0 \in \mathbb{R}^{n_v}$,$\lambda_{-1} = \hat \lambda_0 \in \mathbb{R}^{n_b},\rho > 0, \alpha_1 = 1$}
+    \For{$k = 0,1,2,...$}{
+    	$u_{k} = \text{argmin}_u H(u)+\langle \hat \lambda_k, -Au \rangle +  \frac{\rho}{2} \|b-Au-B \hat v_k\|^2$ \\
+    	$v_{k} = \text{argmin}_u G(v)+\langle \hat \lambda_k, -Bv \rangle +  \frac{\rho}{2} \|b-Au_{k}-Bv\|^2$ \\
+    	$\lambda_{k} = \hat \lambda_k + \rho(b-Au_{k}-Bv_{k})$ \\
+    	$\alpha_{k+1} = \frac{1+\sqrt{1+4\alpha^2_k}}{2}$ \\
+    	$\hat v_{k+1} = v_k + \frac{\alpha_k -1}{\alpha_{k+1}}(v_k - v_{k-1})$ \\
+    	$\hat \lambda_{k+1} = \lambda_k + \frac{\alpha_k -1}{\alpha_{k+1}}(\lambda_k - \lambda_{k-1})$
+    	}
+    \caption{Acclerated ADMM for strongly convex objective}
+\end{algorithm}
+
+\subsection{Strong Concavity of Augmented Dual of Problem (\ref{eqn: obj})}
+\label{subsec:cvx_augdual}
+In this section we discuss when the augmented dual of problem (\ref{eqn: obj}) is strongly concave. This property is desirable since if it holds, many results in \cite{cyrus2018robust} can be applied directly. 
+
+\begin{assumption}
+	$H(u)$ and $G(v)$ are $l_H$ and $l_G$ smooth respectively.
+	\label{assump:smooth_obj}
+\end{assumption}
+
+We first proceed to show that if assumption \ref{assump:smooth_obj} holds, then the dual of problem (\ref{eqn: obj}) is strongly concave. First observe that:
+\begin{equation}
+	\begin{aligned}
+		q^{(\ref{eqn: obj})}(\lambda) &= \inf_{u,v} H(u)+G(v)+\langle \lambda, b-Au-Bv \rangle \\
+		&= \inf_u \{H(u)-\langle A^T\lambda, u\rangle \} + \inf_v \{G(v)-\langle B^T\lambda, v\rangle \} + \langle \lambda, b \rangle \\
+		&= -H^*(A^T\lambda) - G^*(B^T \lambda) + \langle \lambda, b \rangle
+	\end{aligned}
+\end{equation}
+According to Theorem 1 of \cite{zhou2018fenchel}, $H^*(\cdot)$ is ($\frac{1}{l_H}$)-strongly convex and $G^*(\cdot)$ is ($\frac{1}{l_G}$)-strongly convex. For $H^*$, this means $(s_y - s_x)^T(y-x) \geq \frac{1}{l_H}\|y-x\|^2 \ \forall x, y$ and any $s_x \in \partial H^*(x), s_y \in \partial H^*(y)$. WLOG, make $x=A^T \lambda_x$ and $y = A^T \lambda_y \ \forall \lambda_x, \lambda_y$ s.t. $x,y \in \mathcal{D}(H^*)$. Then,
+\begin{equation}
+	\begin{aligned}
+		(s_y - s_x)^T(y-x) &= (\partial H^*(A^T \lambda_y) - \partial H^*(A^T \lambda_x))^T (A^T\lambda_y - A^T \lambda_x) \\
+		&= (A\partial H^*(A^T \lambda_y) - A\partial H^*(A^T \lambda_x))^T(\lambda_x - \lambda_y) \\
+		&= (\frac{\partial H^*(A^T \lambda_y)}{\partial \lambda_y} - \frac{\partial H^*(A^T \lambda_x)}{\partial \lambda_x})^T(\lambda_x - \lambda_y) \\
+		&\geq \frac{1}{l_H}\|y-x\|^2 = \frac{1}{l_H} (\lambda_y - \lambda_x)^TAA^T(\lambda_y - \lambda_x) \\
+		&\geq \frac{\Lambda_{\text{min}}(AA^T)}{l_H} \|\lambda_y - \lambda_x\|^2
+	\end{aligned}
+\end{equation}
+Therefore, it is easy to see that $H^*(A^T\lambda)$ is ($\frac{\Lambda_{\text{min}}(AA^T)}{l_H}$)-strongly convex in $\lambda$. Following exactly the same procedures, we also arrive at the fact that $G^*(B^T \lambda)$ is ($\frac{\Lambda_{\text{min}}(BB^T)}{l_G}$)-strongly convex in $\lambda$.
+Denote $\mu_1 = \frac{\Lambda_{\text{min}}(AA^T)}{l_H} + \frac{\Lambda_{\text{min}}(BB^T)}{l_G}$, then if follows that $H^*(A^T \lambda)+G^*(B^T \lambda)$ is ($\mu_1$)-strongly convex in $\lambda$. Now, define 
+\begin{equation}
+\begin{aligned}
+	&F'(\lambda) = H^*(A^T \lambda)+G^*(B^T \lambda) \\
+	&F(\lambda) = H^*(A^T \lambda)+G^*(B^T \lambda) - \langle \lambda,b \rangle
+\end{aligned}
+\end{equation}
+Given $F'(\lambda)$ is ($\mu_1$)-strongly convex, it's obvious that by using the $(s_y - s_x)^T(y-x) \geq \gamma \|y-x\|^2$ definition of ($\gamma$)-strongly convex function we can verify that $F(\lambda)$ is also ($\mu_1$)-strongly convex in $\lambda$. This is equivalent to saying that $q^{(\ref{eqn: obj})}(\lambda) = -F(\lambda)$ is ($\mu_1$)-strongly concave.\\
+Now we consider the augmented dual. Note that augmented dual is actually just a Moreau envelope of the original dual. For a concave function $f$, the Moreau envelope is defined as such:
+\begin{equation}
+	M_f(\lambda) = \sup_{x} \{f(x) - \frac{1}{2\rho} \|x-\lambda\|^2\}
+\end{equation} 
+Specifically, for $q^{(\ref{eqn: obj})}(\lambda)$, 
+\begin{equation}
+	\begin{aligned}
+		M_{q^{(\ref{eqn: obj})}}(\lambda) &= \sup_{x} \inf_{u,v} \{H(u)+G(v)+\langle x, b-Au-Bv \rangle \} - \sup_{x} \frac{1}{2\rho} \|x-\lambda\|^2 \\
+		&=  \inf_{u,v} \sup_{x} \{H(u)+G(v)+\langle x, b-Au-Bv \rangle \} - \sup_{x} \frac{1}{2\rho} \|x-\lambda\|^2 \\
+		&= \inf_{u,v} \{ H(u)+G(v) + \sup_{x} \{ \langle x, b-Au-Bv \rangle - \frac{1}{2\rho} \|x-\lambda\|^2\}\} \\
+		&= \inf_{u,v} \{ H(u)+G(v) + \langle \lambda, b-Au-Bv \rangle + \frac{\rho}{2}\|b-Au-Bv\|^2\} = q^{(\ref{eqn: obj})}_{\text{aug}}(\lambda)
+	\end{aligned}
+\end{equation}
+Note that the minimax theorem is used here to swap $\inf$ and $\sup$ since $H(u)+G(v)+\langle x, b-Au-Bv \rangle $ is convex in $u,v$ and affine in $x$.\\
+From Fact 3.11 of \cite{planiden2019proximal} we know that if $\rho=1$,  $q^{(\ref{eqn: obj})}_{\text{aug}}(\lambda)$ is ($\frac{1}{K}$)-strongly concave with $\frac{1}{\mu_1}-1 \leq K \leq \frac{1}{\mu_1}+1$. Therefore the augmented dual of problem (\ref{eqn: obj}) is strongly convex when $\rho=1$ and assumption \ref{assump:smooth_obj} holds.
+
+%%% Robust Accelerated ADMM
+\section{Robust Accelerated ADMM}
+\label{sec:robust_aadmm}
+For our work, we adapt an algorithm for robust accelerated first-order optimization from \cite{cyrus2018robust}. In essence, this algorithm hopes to achieve characteristics of both the accelerated GD and vanilla GD, albeit not at the same time, but can be thought of a compromise between the two.\\
+We adapted this algorithm for the dual ascent part of our ADMM:
+\begin{algorithm}
+    \SetKwInOut{Input}{Input}
+    \SetKwInOut{Output}{Output}
+
+    \Input{$v_{-1} = \hat v_0 \in \mathbb{R}^{n_v}$,$\lambda_{-1} = \hat \lambda_0 \in \mathbb{R}^{n_b},\rho =1$}
+    \For{$k = 0,1,2,...$}{
+    	$u_{k} = \text{argmin}_u H(u)+\langle \hat \lambda_k, -Au \rangle +  \frac{\rho}{2} \|b-Au-B \hat v_k\|^2$ \\
+    	$v_{k} = \text{argmin}_u G(v)+\langle \hat \lambda_k, -Bv \rangle +  \frac{\rho}{2} \|b-Au_{k}-Bv\|^2$ \\
+    	$\lambda_{k} = \lambda_{k-1}+\beta(\lambda_{k-1}-\lambda_{k-2})+ \alpha(b-Au_{k}-Bv_{k})$ \\
+    	$\hat \lambda_{k+1} = \lambda_k + \gamma(\lambda_k - \lambda_{k-1})$\\
+    	$\hat v_{k+1} = $ 
+    	}
+    \caption{Robust Accelerated ADMM for strongly convex objective}
+\end{algorithm}
+
+\subsection{Analysis of Robust A-ADMM}
+Given results derived in section \ref{subsec:cvx_augdual}, we know that when $\rho=1$ and both $H,G$ are smooth, the augmented lagrangian of primal is strongly concave. Moreover, from the properties of augmented dual we know that they are also ($\frac{1}{\rho}$)-smooth. If $K \geq 1$, then we have the augmented dual is ($m$)-strongly concave and $(L)$-smooth with $0 < m \leq L$\\
+If either $A$ or $B$ is zero, then all the convergence guarantees from 
+\cite{cyrus2018robust} can be trivially applied. This can be verified by realizing:
+\begin{equation}
+	v_k,u_k = \text{argmin}_{u,v} H(u) + G(v) + \langle \hat \lambda_k, -Au-Bv \rangle +\frac{\rho}{2}\|b-Au-Bv\|^2  \ \forall k \ \ \text{if} \{A=0 || B=0\}
+\end{equation}
+
+%%% CONCLUSIONS AND FUTURE WORK
+\section{Conclusions and Future Work}
+\label{sec: conclusions_and_future_work}
+
+
+%%% ACKNOWLEDGEMENTS
+\section*{Acknowledgements}
+A special thanks goes to Professor Wainwright and TA Armin Askari.
+
+%%% REFERENCES
+\bibliography{rmm_admm.bib}
+\bibliographystyle{ieeetr}
+
+\end{document}
